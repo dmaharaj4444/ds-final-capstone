@@ -1,0 +1,437 @@
+---
+title: "Credit Card Fraud Prediction"
+author: "Dave Maharaj"
+date: "July 29, 2021"
+output: pdf_document
+---
+
+```{r, include=FALSE, echo=FALSE}
+
+################################################################################
+# install packages if necessary
+if(!require(tidyverse)) install.packages("tidyverse")
+if(!require(caret)) install.packages("caret")
+if(!require(data.table)) install.packages("data.table")
+if(!require(corrplot)) install.packages("corrplot")
+if(!require(Rborist)) install.packages("Rborist")
+if(!require(randomForest)) install.packages("randomForest")
+if(!require(e1071)) install.packages("e1071")
+#if(!require(merTools)) install.packages("merTools")
+
+# load libraries
+library(tidyverse)
+library(lubridate)
+#library(GGally)
+library(caret)
+library(Rborist)
+library(randomForest)
+library(e1071)
+library(corrplot)
+library(knitr)
+#library(merTools)
+
+# set seed
+set.seed(2021)
+options(digits = 5)
+
+# load csv file with data
+
+current_path <- getwd()
+file_name <- "creditcard.csv"
+
+full_path_creditcard <- file.path(current_path, file_name)
+
+credit_card_data <- read_csv(full_path_creditcard)
+
+# change class to factored data
+credit_card_data_factored <- credit_card_data %>% mutate(Class=factor(Class))
+
+################################################################################
+```
+
+
+# Executive Summary
+
+The objective of this paper is to analyze credit card fraud data from Kaggle. The data contains just over 280 thousand records in total. We will complete exploratory analysis on the dataset to gain insights into the features and the relationships between these. The dataset is imbalanced since there is a small number of transactions marked as fraud. The analysis will need to account for this imbalance to allow us to predict with higher confidence. 
+
+Confidence will be measured using accuracy, sensitivity and specificity. Since this is a classification problem, that is, the transaction is fraudulent or not, these metrics will help us understand how good our algorithm performs. Our objective is to have high specificity, that is, we want to have high rates of correctly predicting the fraudulent transactions. This means that our false negative values (non-fraudulent transaction) should be minimized. 
+
+We will test a number of algorithms and conclude with the findings for each algorithm. We will use just over 120 thousand records for the analysis. This will include all the fraudulent transactions from the original dataset, plus 120 thousand randomly selected records from the non-fraudulent transactions. To validate our models, we will keep 20% of our data for testing. This set will not be used for training to simulate transactions that the model has not seen. We elected to go with 20% to have sufficient number of samples for training the algorithms. 
+
+
+
+# Method/Analysis
+
+## Overview of dataset
+The dataset contains 30 potential predictors and the outcome value. A summary of the data is below:
+
+Column 1 contains the time value of the transaction. This value is defined as the time between each transaction. 
+Column 2 to 30 have been encoded using principle component analysis (PCA). This was done to facilitate confidentiality of the data. The final column contains the outcome. 
+
+```{r, echo=FALSE, include=TRUE}
+kable(head(credit_card_data_factored[, 1:10]))
+```
+
+Table continued..
+
+```{r, echo=FALSE, include=TRUE}
+kable(head(credit_card_data_factored[, 11:20]))
+```
+
+Table continued
+
+```{r, echo=FALSE, include=TRUE}
+kable(head(credit_card_data_factored[, 21:31]))
+```
+
+
+The dataset is imbalanced, meaning that the number of fraudulent transactions are very small compared to legitimate transactions. The table below provides a high level summary. 
+
+```{r, include=TRUE, echo=FALSE}
+# count fraudulent transaction. Note that a 1 represents a fraudulent transaction.
+# this shows that the data is imbalanced significantly. Fraudulent transaction represents less than 1% of the data. 
+credit_card_data %>% group_by(Class) %>% summarise(counts = n()) %>% summarise(Class=Class, RecordCount=counts, Proportion=round(counts/sum(counts), digits=3)) %>% kable()
+```
+
+## Visual analysis and summary statistics
+
+Below we explore the data visually and with summary statistics. This will help us gain a high level understanding of the dataset, which will help us define parameters for our model definitions. 
+
+Correlation Matrix:
+The plot below shows the correlation between the variables. In particular, you can see that a handful of variables are highly correlated to the amount (either negative or positive).
+
+```{r, echo=FALSE, include=TRUE, message=FALSE, warning=FALSE}
+# correlation matrix to understand the relationship between pairs of values.
+corrplot(cor(credit_card_data[,1:30]), tl.cex = 0.5, tl.offset = 0.6)
+```
+
+
+Distribution of fraudulent transactions:
+
+This shows that most of the fraud transactions are under $1000. 
+
+```{r, echo=FALSE, include=TRUE, message=FALSE, warning=FALSE}
+# amounts on fraudulent transactions
+credit_card_data_factored %>% filter(Class==1) %>% ggplot(aes(Amount)) +
+  scale_x_continuous(trans = "sqrt", oob = scales::squish_infinite) + geom_histogram(binwidth = 2)
+```
+
+
+Distribution of non-fraudulent transactions:
+
+The plot shows that non-fraud transactions has a wide range of amounts, from below 8 dollars to more than $20,000. 
+```{r, echo=FALSE, include=TRUE, message=FALSE, warning=FALSE}
+# amounts on non-fraudulent transactions
+credit_card_data_factored %>% filter(Class==0) %>% ggplot(aes(Amount)) +
+  scale_x_continuous(trans = "log2", oob = scales::squish_infinite) + geom_histogram(binwidth = 3)
+```
+
+
+
+Transaction type by time:
+The plot below shows the transaction type by time. As you can see there is no clear pattern between time and the transaction amount by Class. 
+
+```{r, echo=FALSE, include=TRUE, message=FALSE, warning=FALSE}
+# time in seconds verses the amount of each transaction and then the classes in color
+credit_card_data_factored %>% ggplot(aes(Amount, Time, color=Class))  + 
+  scale_x_continuous(trans = "sqrt", oob = scales::squish_infinite) + geom_point()
+```
+
+## Statistical summary values
+Below are the summary values for fraudulent transactions.
+
+```{r, echo=FALSE, include=TRUE}
+#mean of fraud trans
+credit_card_data %>% filter(Class==1) %>% 
+  summarise(Mean_0 = mean(Amount), SD_0 = sd(Amount), Max_0 = max(Amount), min_0 = min(Amount)) %>% 
+  kable()
+```
+
+
+Below are the summary values for non-fraudulent transactions.
+
+```{r, echo=FALSE, include=TRUE}
+credit_card_data %>% filter(Class==0) %>% 
+  summarise(Mean_0 = mean(Amount), SD_0 = sd(Amount), Max_0 = max(Amount), min_0 = min(Amount)) %>% 
+  kable()
+```
+
+
+These statistic summary values shows that the mean is different by a number of points between both classes. The SD value is close between the classes and the Max is significantly different between both classes.  
+
+
+## Pre-processing
+This dataset is already processed well and does not necessarily require additional processing depending on the algorithm you elect to use. Since we do plan to use Support Vector machines as one of our algorithms, we will scale the data to center the values. In this project we scaled the data by subtracting the mean and then dividing by the standard deviation. 
+
+```{r, include=FALSE, echo=FALSE}
+
+# sub sample the non-fraud transactions
+fraud_class <- credit_card_data_factored %>% filter(Class==1)
+non_fraud_class <- credit_card_data_factored %>% filter(Class==0)
+sample_non_fraud <- sample_n(non_fraud_class, 120000, replace = FALSE)
+merge_fraud_non_fraud <- rbind(fraud_class, sample_non_fraud)
+final_dataset <- sample_n(merge_fraud_non_fraud, nrow(merge_fraud_non_fraud), replace = FALSE)
+
+# scale the dataset
+scaled_final_dataset <- as.data.frame(scale(final_dataset[, 1:30]))
+scaled_final_dataset <- cbind(scaled_final_dataset, final_dataset[,31])
+
+# split data into training and validation sets
+
+test_indexes <- createDataPartition(scaled_final_dataset$Class, times=1, p=0.2, list=FALSE)
+
+# create validation and training sets.
+validation_set <- scaled_final_dataset[test_indexes,]
+training_set <- scaled_final_dataset[-test_indexes,]
+```
+
+
+
+## Modeling
+
+Because the data is imbalanced, modeling will not yield accurate results with the data as is. We therefore need to look at doing one of the following:
+
+Class weights - generate heavier cost when the minority class generate errors
+Up-sampling - create additional samples for the minority class
+Down-sampling - reduce the number of samples in the majority class.
+
+We will try 3 different algorithms for modeling. Logistic regression, support vector machines and random forest. In order to allow the algorithms to run on a laptop, we have reduced the dataset by sampling 120 thousand non-fraudulent records and all the fraudulent records. 
+
+For all models we will standardize on the number of cross validation (cv) sets and the percentage of data to use for training. We will use 3 cv's and 90% of the data for training during cross validation. The code to implement this is below. Note that cross validation is not being used for the support vector machine algorithm. 
+
+Additionally, a confusion matrix was generated after predicting with the validation data to test each model. 
+
+```{r, include=TRUE}
+train_params <- trainControl(method = 'cv', number = 3, p=0.9)
+```
+
+### Logistic Regression - imbalanced data
+
+Logistic regression models the probability of a class in the dataset. The algorithm uses the predictors to determine the probability.
+
+Before we use a method to address the imbalanced nature of the data, we will first look at the impact of having a significantly small number of records that are fraudulent versus not non-fraudulent. This will be done using logistic regression without any of the options above to address imbalanced data. The code for this is below.
+
+```{r, include=TRUE}
+# GLM model
+glm_fit <- train(Class ~ ., data=training_set, method='glm', 
+                 trControl=train_params, family=quasibinomial, maxit=100)
+glm_predictions <- predict(glm_fit, newdata=validation_set)
+glm_cm <- confusionMatrix(glm_predictions, factor(validation_set$Class))
+```
+
+This model produced the results below. The results show that the specificity is less than 75%, this means that the model is predicting a number of false negatives (non-fraudulent transaction).The results also show a near 100% value for sensitivity since we are predicting almost all transactions as non-fraudulent. 
+
+```{r, echo=FALSE, include=TRUE}
+tibble(Method = "Logistic Regression", Sensitivity=glm_cm$byClass[1], 
+       Specificity=glm_cm$byClass[2], Accuracy=glm_cm$overall[1]) %>% kable()
+``` 
+
+The confusion matrix shows a summary of the predictions against the actual value. 
+
+```{r, echo=FALSE, include=TRUE}
+# confusion matrix plot glm model
+glm_cm_tb <- as.data.frame(glm_cm$table)
+glm_cm_tb %>% ggplot(aes(Prediction, Reference)) + geom_tile(aes(fill=Freq)) +
+  geom_text(aes(label=Freq)) +
+  scale_fill_gradient2() +
+  ggtitle("Logistic Regression - Confusion Matrix")
+```
+
+
+```{r, include=FALSE, echo=FALSE}
+# table of results
+model_results <- tibble(Method = "Logistic Regression", Sensitivity=glm_cm$byClass[1], 
+                        Specificity=glm_cm$byClass[2], Accuracy=glm_cm$overall[1])
+```
+
+
+### Logistic Regression - class weights
+
+The results above does not meet our objective, since we want our specificity to be higher. Let's adjust our model to include class weights. This approach will allow us to weigh the classes based on the number of records for that class in the dataset. 
+
+The code below does this for us. 
+```{r,include=TRUE}
+# Use class weights given the data is imbalanced. Calculate the weight for each class
+weights_0_1 <- training_set %>% group_by(Class) %>% 
+  summarise(counts = n()) %>% mutate(weight = (1/counts)*0.5) %>% pull(weight)
+# create vector of training weights for each record in the dataset
+training_weights <- training_set %>% 
+  summarise(weight = ifelse(Class == 0, weights_0_1[1], weights_0_1[2])) %>% pull(weight)
+```
+
+The model is now trained using the class weights using the code below. 
+```{r, include=TRUE}
+# GLM model with class weights
+glm_fit_cl_weight <- train(Class ~ ., data=training_set, method='glm', 
+                           trControl=train_params, weights = training_weights, 
+                           family=quasibinomial, maxit=100)
+
+glm_predictions_cl_weight <- predict(glm_fit_cl_weight, newdata=validation_set)
+glm_cl_weight_cm <- confusionMatrix(glm_predictions_cl_weight, factor(validation_set$Class))
+```
+
+```{r, include=FALSE, echo=FALSE}
+# update table of results.
+model_results <- bind_rows(model_results, 
+                           tibble(Method = "Logistic Regression - with class weights", 
+                                  Sensitivity=glm_cl_weight_cm$byClass[1], 
+                                  Specificity=glm_cl_weight_cm$byClass[2], 
+                                  Accuracy=glm_cl_weight_cm$overall[1]))
+```
+
+The logistic model with class weights produced the results below
+```{r, echo=FALSE, include=TRUE}
+# model with class weights
+tibble(Method = "Logistic Regression - with class weights", 
+       Sensitivity=glm_cl_weight_cm$byClass[1], 
+       Specificity=glm_cl_weight_cm$byClass[2], 
+       Accuracy=glm_cl_weight_cm$overall[1]) %>% kable()
+```
+
+These results are much more favorable. The specificity has increased to 88% and our sensitivity is still over 97%. Note that sensitivity has decreased a little, this is normal, As specificity increases, sensitivity usually decreases.
+
+A confusion matrix showing the predictions verses the actual values is in the plot below. 
+
+```{r, echo=FALSE, include=TRUE}
+# confusion matrix plot glm model with class weights
+glm_cm_cl_w_tb <- as.data.frame(glm_cl_weight_cm$table)
+glm_cm_cl_w_tb %>% ggplot(aes(Prediction, Reference)) + geom_tile(aes(fill=Freq)) +
+  geom_text(aes(label=Freq)) +
+  scale_fill_gradient2(low = 'red', high = 'green') +
+  ggtitle("Logistic Regression - Class Weights Confusion Matrix")
+```
+
+
+
+### Support Vector Machines
+
+We will now try another model to understand if we can do better. The model we will use is Support Vector Machines (SVM). SVM is used to classify the data. As it does the classification process, the algorithm also defines a boundary that separates the classes. 
+
+Class weights have been used with the SVM algorithm address imbalanced data.The code below was used to execute the model. 
+
+```{r, include=TRUE}
+# SVM Model
+svm_fit <- svm(Class ~ ., data=training_set, 
+               class.weights=c("0"=weights_0_1[1], "1"=weights_0_1[2]), kernel='linear')
+svm_predictions <- predict(svm_fit, newdata=validation_set)
+svm_cm <- confusionMatrix(svm_predictions, factor(validation_set$Class))
+
+```
+
+After testing with the validation data, we got the results below. The specificity was over 81% and our sensitivity 99.9%.
+
+```{r, echo=FALSE, include=TRUE}
+tibble(Method = "SVM - with class weights", 
+       Sensitivity=svm_cm$byClass[1], 
+       Specificity=svm_cm$byClass[2], 
+       Accuracy=svm_cm$overall[1]) %>% kable()
+```
+
+Confusion matrix with the results of testing is below.
+
+```{r, echo=FALSE, include=TRUE}
+# confusion matrix plot svm model with class weights
+svm_cm_tb <- as.data.frame(svm_cm$table)
+svm_cm_tb %>% ggplot(aes(Prediction, Reference)) + geom_tile(aes(fill=Freq)) +
+  geom_text(aes(label=Freq)) +
+  scale_fill_gradient2(low = 'red', high = 'blue') +
+  ggtitle("SVM - Confusion Matrix")
+```
+
+
+```{r, include=FALSE, echo=FALSE}
+# update table of results.
+model_results <- bind_rows(model_results, tibble(Method = "SVM - with class weights", 
+                                                 Sensitivity=svm_cm$byClass[1], 
+                                                 Specificity=svm_cm$byClass[2], 
+                                                 Accuracy=svm_cm$overall[1]))
+```
+
+
+### Random Forest
+
+We will now try the random forest algorithm. This algorithm builds decision forest for classification. Multiple decision trees are generated and then the algorithm selects the tree that is most common in the forest as the final output. The random forest algorithm does not benefit from feature scaling so we did not use the scaled version of the data. 
+
+```{r, echo=FALSE, include=TRUE}
+# random forest
+# update the training and validation sets to not have feature scaling
+# split data into training and validation sets
+
+test_indexes <- createDataPartition(final_dataset$Class, times=1, p=0.2, list=FALSE)
+
+# create validation and training sets.
+validation_set_rf <- final_dataset[test_indexes,]
+training_set_rf <- final_dataset[-test_indexes,]
+
+```
+
+
+This model was used with class weights on the dataset. The code for modeling with random forest is below.
+```{r, include=TRUE}
+# random forest
+# results of running the model showed an mtry value of 16 as optimal
+rf_fit <- train(Class ~ ., data=training_set_rf, method='rf', 
+                classwt=c("0"=weights_0_1[1], "1"=weights_0_1[2]), 
+                trControl=train_params)
+
+rf_predictions <- predict(rf_fit, newdata = validation_set_rf)
+rf_cm <- confusionMatrix(rf_predictions, factor(validation_set$Class))
+```
+
+
+The algorithm landed on 16 predictors, the plot below shows this after running the learning process.
+```{r, echo=FALSE, include=TRUE}
+plot(rf_fit)
+```
+
+
+The results of this model can be found in the table below. The results produced a low specificity of less than 67% and a perfect sensitivity of 100%. This means that we classified more than 30% of the fraudulent transactions as non-fraudulent, which does not meet our objective. 
+```{r, echo=FALSE, include=TRUE}
+tibble(Method = "Random Forest - with class weights", 
+       Sensitivity=rf_cm$byClass[1], 
+       Specificity=rf_cm$byClass[2],
+       Accuracy=rf_cm$overall[1]) %>% kable()
+```
+
+```{r, include=FALSE, echo=FALSE}
+# update table of results.
+model_results <- bind_rows(model_results, tibble(Method = "Random Forest - with class weights", 
+                                                 Sensitivity=rf_cm$byClass[1], Specificity=rf_cm$byClass[2], 
+                                                 Accuracy=rf_cm$overall[1]))
+```
+
+
+Confusion matrix with the results of the random forest algorithm.
+
+```{r, echo=FALSE, include=TRUE}
+# confusion matrix plot random forest model with class weights
+rf_cm_tb <- as.data.frame(rf_cm$table)
+rf_cm_tb %>% ggplot(aes(Prediction, Reference)) + geom_tile(aes(fill=Freq)) +
+  geom_text(aes(label=Freq)) +
+  scale_fill_gradient2(low = 'yellow', high = 'purple') +
+  ggtitle("Random Forest - Confusion Matrix")
+```
+
+
+# Conclusion
+
+It is important to note that the analysis was done on a subset of the data. With more data and additional parameter turning, there is a possibility of getting better results. Using cloud resources to run the analysis will allow you to efficiently model using complex algorithms on the entire dataset. This is a good next step. Additionally, using neural networks (NN) on the dataset may further improve the results since NNs can learn complex patterns in the dataset. 
+
+The table below summarize the results of our findings. 
+
+```{r, echo=FALSE, include=TRUE}
+kable(model_results, align = "l", format='pipe')
+```
+
+Our results show that both logistic regression and support vector machines with class weights produced favorable results. This gave us over 87% and 81% specificity respectively, which means we correctly identified more than 80% of the fraudulent transactions using these two algorithms. Accuracy on the SVM algorithm is over 99%, while the logistic regression (with class weights) produced an accuracy of close to 98%. Random Forest produced less than 67% on specificity with an overall accuracy of over 99%. 
+
+All the models produced significantly high accuracy, this was mainly due to predicting the non-fraud transaction correctly in over 97% of the cases. If we had more data on non-fraud transactions, there is a possibility that we could get better results on the fraud transactions predictions. One approach to try is up-sampling to address the imbalanced data. We did not try that in this project as it does take a while to train on a laptop. Up-sampling will create additional entries for fraudulent transactions, essentially increasing the overall dataset during training. This approach for all 3 models may produce better results. Given the performance on logistic regression and support vector machines, it may be more beneficial to focus on one of those algorithms to further improve the strength of predictions. 
+
+The scatter plot below visualizes sensitivity and specificity for the models.
+
+```{r, echo=FALSE, include=TRUE}
+# plot of Specificity and Sensitivity
+model_results %>% ggplot(aes(Specificity, Sensitivity, color=Method)) + geom_point(size=5)
+```
+
+
