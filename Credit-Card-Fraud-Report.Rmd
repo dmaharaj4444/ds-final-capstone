@@ -119,7 +119,8 @@ credit_card_data_factored %>% filter(Class==1) %>% ggplot(aes(Amount)) +
 
 Distribution of non-fraudulent transactions:
 
-The plot shows that non-fraud transactions has a wide range of amounts, from below 8 dollars to more than $20,000. 
+The plot shows that non-fraud transactions has a wide range of amounts, from below 8 dollars to more than $20,000.
+
 ```{r, echo=FALSE, include=TRUE, message=FALSE, warning=FALSE}
 # amounts on non-fraudulent transactions
 credit_card_data_factored %>% filter(Class==0) %>% ggplot(aes(Amount)) +
@@ -375,7 +376,7 @@ rf_fit <- train(Class ~ ., data=training_set_rf, method='rf',
                 trControl=train_params)
 
 rf_predictions <- predict(rf_fit, newdata = validation_set_rf)
-rf_cm <- confusionMatrix(rf_predictions, factor(validation_set$Class))
+rf_cm <- confusionMatrix(rf_predictions, factor(validation_set_rf$Class))
 ```
 
 
@@ -385,7 +386,7 @@ plot(rf_fit)
 ```
 
 
-The results of this model can be found in the table below. The results produced a low specificity of less than 67% and a perfect sensitivity of 100%. This means that we classified more than 30% of the fraudulent transactions as non-fraudulent, which does not meet our objective. 
+The results of this model can be found in the table below. The results produced a low specificity of less than 76% and a perfect sensitivity of 100%. This means that we classified more than 24% of the fraudulent transactions as non-fraudulent, which does not meet our objective. 
 ```{r, echo=FALSE, include=TRUE}
 tibble(Method = "Random Forest - with class weights", 
        Sensitivity=rf_cm$byClass[1], 
@@ -423,7 +424,7 @@ The table below summarize the results of our findings.
 kable(model_results, align = "l", format='pipe')
 ```
 
-Our results show that both logistic regression and support vector machines with class weights produced favorable results. This gave us over 87% and 81% specificity respectively, which means we correctly identified more than 80% of the fraudulent transactions using these two algorithms. Accuracy on the SVM algorithm is over 99%, while the logistic regression (with class weights) produced an accuracy of close to 98%. Random Forest produced less than 67% on specificity with an overall accuracy of over 99%. 
+Our results show that both logistic regression and support vector machines with class weights produced favorable results. This gave us over 87% and 81% specificity respectively, which means we correctly identified more than 80% of the fraudulent transactions using these two algorithms. Accuracy on the SVM algorithm is over 99%, while the logistic regression (with class weights) produced an accuracy of close to 98%. Random Forest produced less than 76% on specificity with an overall accuracy of over 99%. 
 
 All the models produced significantly high accuracy, this was mainly due to predicting the non-fraud transaction correctly in over 97% of the cases. If we had more data on non-fraud transactions, there is a possibility that we could get better results on the fraud transactions predictions. One approach to try is up-sampling to address the imbalanced data. We did not try that in this project as it does take a while to train on a laptop. Up-sampling will create additional entries for fraudulent transactions, essentially increasing the overall dataset during training. This approach for all 3 models may produce better results. Given the performance on logistic regression and support vector machines, it may be more beneficial to focus on one of those algorithms to further improve the strength of predictions. 
 
