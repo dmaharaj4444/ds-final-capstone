@@ -35,6 +35,10 @@ options(digits = 5)
 current_path <- getwd()
 file_name <- "creditcard.csv"
 
+# The dataset used in this analysis is from Kaggle. It is a collection of credit card transactions in September 2013 by European cardholders. 
+# This dataset has been transformed using PCA to protect the confidentiality of of the card holders.
+# link to dataset in Kaggle -> https://www.kaggle.com/mlg-ulb/creditcardfraud
+
 full_path_creditcard <- file.path(current_path, file_name)
 
 credit_card_data <- read_csv(full_path_creditcard)
@@ -169,6 +173,7 @@ model_results <- bind_rows(model_results, tibble(Method = "Logistic Regression -
                                                  Sensitivity=glm_cl_weight_cm$byClass[1], 
                                                  Specificity=glm_cl_weight_cm$byClass[2], 
                                                  Accuracy=glm_cl_weight_cm$overall[1]))
+                                                
 
 # confusion matrix plot glm model with class weights
 glm_cm_cl_w_tb <- as.data.frame(glm_cl_weight_cm$table)
@@ -181,6 +186,7 @@ glm_cm_cl_w_tb %>% ggplot(aes(Prediction, Reference)) + geom_tile(aes(fill=Freq)
 
 # SVM Model
 svm_fit <- svm(Class ~ ., data=training_set, class.weights=c("0"=weights_0_1[1], "1"=weights_0_1[2]), kernel='linear')
+
 svm_predictions <- predict(svm_fit, newdata=validation_set)
 svm_cm <- confusionMatrix(svm_predictions, factor(validation_set$Class))
 
@@ -232,4 +238,6 @@ rf_cm_tb %>% ggplot(aes(Prediction, Reference)) + geom_tile(aes(fill=Freq)) +
 
 # plot of Specificity and Sensitivity
 model_results %>% ggplot(aes(Specificity, Sensitivity, color=Method)) + geom_point(size=5)
+
+
 
