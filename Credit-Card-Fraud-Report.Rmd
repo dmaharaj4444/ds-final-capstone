@@ -52,7 +52,9 @@ credit_card_data_factored <- credit_card_data %>% mutate(Class=factor(Class))
 
 # Executive Summary
 
-The objective of this paper is to analyze credit card fraud data from Kaggle. The data contains just over 280 thousand records in total. We will complete exploratory analysis on the dataset to gain insights into the features and the relationships between these. The dataset is imbalanced since there is a small number of transactions marked as fraud. The analysis will need to account for this imbalance to allow us to predict with higher confidence. 
+The objective of this paper is to analyze credit card fraud data from Kaggle. The data contains just over 280 thousand records in total. These records are credit card transactions from September 2013 by European cardholders. The data has been transformed using PCA to protect the confidentiality of the cardholders. 
+
+We will complete exploratory analysis on the dataset to gain insights into the features and the relationships between these. The dataset is imbalanced since there is a small number of transactions marked as fraud. The analysis will need to account for this imbalance to allow us to predict with higher confidence. 
 
 Confidence will be measured using accuracy, sensitivity and specificity. Since this is a classification problem, that is, the transaction is fraudulent or not, these metrics will help us understand how good our algorithm performs. Our objective is to have high specificity, that is, we want to have high rates of correctly predicting the fraudulent transactions. This means that our false negative values (non-fraudulent transaction) should be minimized. 
 
@@ -66,7 +68,7 @@ We will test a number of algorithms and conclude with the findings for each algo
 The dataset contains 30 potential predictors and the outcome value. A summary of the data is below:
 
 Column 1 contains the time value of the transaction. This value is defined as the time between each transaction. 
-Column 2 to 30 have been encoded using principle component analysis (PCA). This was done to facilitate confidentiality of the data. The final column contains the outcome. 
+Column 2 to 30 have been encoded using principle component analysis (PCA). The final column contains the outcome. 
 
 ```{r, echo=FALSE, include=TRUE}
 kable(head(credit_card_data_factored[, 1:10]))
@@ -434,5 +436,15 @@ The scatter plot below visualizes sensitivity and specificity for the models.
 # plot of Specificity and Sensitivity
 model_results %>% ggplot(aes(Specificity, Sensitivity, color=Method)) + geom_point(size=5)
 ```
+
+
+
+# References
+
+
+## Sources
+Link to Kaggle website where further details can be found on the database used in this analysis is below.
+
+https://www.kaggle.com/mlg-ulb/creditcardfraud
 
 
